@@ -93,7 +93,8 @@ impl ServerAuthBuilder {
             scope,
             Target::Server(self.free_slot),
         ));
-        self.free_slot += 1; // TODO: handle overflow
+        // NOTE: This technically can overflow, but extremely unlikely under reasonable use
+        self.free_slot += 1;
         self
     }
 

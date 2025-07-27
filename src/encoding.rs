@@ -14,8 +14,9 @@ fn write_len<W: Write>(writer: &mut W, value: u16) -> io::Result<()> {
     writer.write_all(&value.to_be_bytes())
 }
 
-fn read_field(reader: &mut impl Read) -> io::Result<Vec<u8>> {
-    // TODO: is a shared buffer here worth it? Is the compiler smart enough to optimize?
+fn read_field<R: Read>(reader: &mut R) -> io::Result<Vec<u8>> {
+    // TODO: is a shared buffer for length here worth it?
+    // Is the compiler smart enough to optimize?
 
     let len = read_len(reader)?;
     let mut buf = vec![0u8; len as usize];
@@ -74,7 +75,12 @@ impl XAuthorityEntry {
     pub fn read_from<R: Read>(reader: &mut R) -> io::Result<Option<Self>> {
         let family = match read_len(reader) {
             Ok(value) => value,
-            Err(_) => return Ok(None), // TODO: replace _ with EOF
+            Err(e) => {
+                return match e.kind() {
+                    io::ErrorKind::UnexpectedEof => Ok(None),
+                    _ => Err(e),
+                };
+            }
         };
         let family = Family::from_repr(family).ok_or(err_invalid_field("family"));
 
