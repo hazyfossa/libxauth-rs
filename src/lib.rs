@@ -9,9 +9,9 @@ use crate::lock::XAuthorityLock;
 
 type DisplayNumber = String;
 
-enum Target {
+pub enum Target {
     // Think of this as "auth slot"
-    // u16 (65535 cookies) is an arbitrary but reasonable limit
+    // u16 (65536 cookies) is an arbitrary but reasonable limit
     Server(u16),
     Client(DisplayNumber),
 }
@@ -25,14 +25,14 @@ impl From<Target> for String {
     }
 }
 
-type Address = Vec<u8>;
+type Hostname = Vec<u8>;
 
 pub enum Scope {
-    Local(Address),
+    Local(Hostname),
     Any,
 }
 
-impl From<Scope> for (Family, Address) {
+impl From<Scope> for (Family, Hostname) {
     fn from(value: Scope) -> Self {
         match value {
             Scope::Local(hostname) => (Family::Local, hostname),
@@ -41,9 +41,11 @@ impl From<Scope> for (Family, Address) {
     }
 }
 
+// Technically, this should be a trait "AuthMethod"
+// Practically, cookie is the only method that is currently used
 pub struct Cookie([u8; Self::BYTES_LEN]);
 impl Cookie {
-    pub const BYTES_LEN: usize = 128;
+    pub const BYTES_LEN: usize = 16; // 16 * 8 = 128 random bits
     const AUTH_NAME: &str = "MIT-MAGIC-COOKIE-1";
 
     pub fn new(random_bytes: [u8; Self::BYTES_LEN]) -> Self {
@@ -57,7 +59,7 @@ impl Cookie {
 }
 
 impl XAuthorityEntry {
-    fn new(cookie: &Cookie, scope: Scope, target: Target) -> XAuthorityEntry {
+    pub fn new(cookie: &Cookie, scope: Scope, target: Target) -> XAuthorityEntry {
         let (family, address) = scope.into();
         let display_number = target.into();
         let (auth_name, auth_data) = cookie.raw_data();
@@ -85,25 +87,55 @@ impl ServerAuthBuilder {
         }
     }
 
-    pub fn allow(&mut self, cookie: &Cookie, scope: Scope) {
+    pub fn allow(mut self, cookie: &Cookie, scope: Scope) -> Self {
         self.inner.add_entry(XAuthorityEntry::new(
             cookie,
             scope,
             Target::Server(self.free_slot),
         ));
         self.free_slot += 1; // TODO: handle overflow
+        self
     }
 
     pub fn finish(self) -> XAuthority {
         self.inner
     }
+}
 
-    pub fn local(cookie: &Cookie, hostname: Vec<u8>) -> XAuthority {
-        XAuthority::new(Some(vec![XAuthorityEntry::new(
-            cookie,
-            Scope::Local(hostname),
-            Target::Server(0),
-        )]))
+pub struct LocalXAuthority {
+    cookie: Cookie,
+    hostname: Hostname,
+}
+
+impl LocalXAuthority {
+    pub fn new(cookie: Cookie, hostname: Hostname) -> Self {
+        Self { cookie, hostname }
+    }
+
+    // TODO: is a static, one-entry local server auth getter useful?
+
+    pub fn build_server(&self) -> ServerAuthBuilder {
+        ServerAuthBuilder::build().allow(&self.cookie, Scope::Local(self.hostname.clone()))
+    }
+
+    pub fn client(self, display: DisplayNumber) -> XAuthority {
+        let entry_any =
+            XAuthorityEntry::new(&self.cookie, Scope::Any, Target::Client(display.clone()));
+
+        // NOTE: The default entry allows connecting to the local display via whatever means necessary
+        // However, this is still necessary for clients which do not support Scope::Any
+        // (require an explicit hostname)
+        //
+        // TODO: is this still relevant?
+        // NOTE: another purpose to local entry might be for desktop to survive a hostname change
+
+        let entry_local = XAuthorityEntry::new(
+            &self.cookie,
+            Scope::Local(self.hostname),
+            Target::Client(display),
+        );
+
+        XAuthority::new(Some(vec![entry_local, entry_any]))
     }
 }
 
