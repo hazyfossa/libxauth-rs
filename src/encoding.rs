@@ -62,7 +62,7 @@ pub enum Family {
 }
 
 #[derive(Debug)]
-pub struct Entry {
+pub struct XAuthorityEntry {
     pub family: Family,
     pub address: Vec<u8>,
     pub display_number: String,
@@ -70,7 +70,7 @@ pub struct Entry {
     pub auth_data: Vec<u8>,
 }
 
-impl Entry {
+impl XAuthorityEntry {
     pub fn read_from<R: Read>(reader: &mut R) -> io::Result<Option<Self>> {
         let family = match read_len(reader) {
             Ok(value) => value,
@@ -98,21 +98,22 @@ impl Entry {
     }
 }
 
-pub struct XAuthority(Vec<Entry>);
+// TODO: replace with `impl IntoIter<Item = XAuthorityEntry>`
+pub struct XAuthority(Vec<XAuthorityEntry>);
 
 impl XAuthority {
-    pub fn new(entries: Option<Vec<Entry>>) -> Self {
+    pub fn new(entries: Option<Vec<XAuthorityEntry>>) -> Self {
         Self(entries.unwrap_or_default())
     }
 
-    pub fn add_entry(&mut self, entry: Entry) {
+    pub fn add_entry(&mut self, entry: XAuthorityEntry) {
         self.0.push(entry);
     }
 
     pub fn read_from<R: Read>(reader: &mut R) -> io::Result<Self> {
         let mut buf = Vec::new();
 
-        while let Some(entry) = Entry::read_from(reader)? {
+        while let Some(entry) = XAuthorityEntry::read_from(reader)? {
             buf.push(entry);
         }
 
@@ -129,7 +130,7 @@ impl XAuthority {
 }
 
 impl IntoIterator for XAuthority {
-    type Item = Entry;
+    type Item = XAuthorityEntry;
     type IntoIter = vec::IntoIter<Self::Item>;
     fn into_iter(self) -> Self::IntoIter {
         self.0.into_iter()

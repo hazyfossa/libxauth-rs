@@ -2,19 +2,18 @@ pub mod encoding;
 pub mod lock;
 
 use std::io::{self, Seek};
-use std::ops::Deref;
 use std::{env, fs::File, path::PathBuf};
 
-use crate::encoding::{Entry, Family, XAuthority};
+use crate::encoding::{Family, XAuthority, XAuthorityEntry};
 use crate::lock::XAuthorityLock;
 
-type Display = String;
+type DisplayNumber = String;
 
 enum Target {
     // Think of this as "auth slot"
     // u16 (65535 cookies) is an arbitrary but reasonable limit
     Server(u16),
-    Client(Display),
+    Client(DisplayNumber),
 }
 
 impl From<Target> for String {
@@ -57,13 +56,13 @@ impl Cookie {
     }
 }
 
-impl Entry {
-    fn new(cookie: &Cookie, scope: Scope, target: Target) -> Entry {
+impl XAuthorityEntry {
+    fn new(cookie: &Cookie, scope: Scope, target: Target) -> XAuthorityEntry {
         let (family, address) = scope.into();
         let display_number = target.into();
         let (auth_name, auth_data) = cookie.raw_data();
 
-        Entry {
+        XAuthorityEntry {
             family,
             address,
             display_number,
@@ -73,13 +72,13 @@ impl Entry {
     }
 }
 
-pub struct ServerAuth {
+pub struct ServerAuthBuilder {
     inner: XAuthority,
     free_slot: u16,
 }
 
-impl ServerAuth {
-    pub fn new() -> Self {
+impl ServerAuthBuilder {
+    pub fn build() -> Self {
         Self {
             inner: XAuthority::new(None),
             free_slot: 0,
@@ -87,16 +86,24 @@ impl ServerAuth {
     }
 
     pub fn allow(&mut self, cookie: &Cookie, scope: Scope) {
-        self.inner
-            .add_entry(Entry::new(cookie, scope, Target::Server(self.free_slot)));
-        self.free_slot += 1;
+        self.inner.add_entry(XAuthorityEntry::new(
+            cookie,
+            scope,
+            Target::Server(self.free_slot),
+        ));
+        self.free_slot += 1; // TODO: handle overflow
     }
-}
 
-impl Deref for ServerAuth {
-    type Target = XAuthority;
-    fn deref(&self) -> &Self::Target {
-        &self.inner
+    pub fn finish(self) -> XAuthority {
+        self.inner
+    }
+
+    pub fn local(cookie: &Cookie, hostname: Vec<u8>) -> XAuthority {
+        XAuthority::new(Some(vec![XAuthorityEntry::new(
+            cookie,
+            Scope::Local(hostname),
+            Target::Server(0),
+        )]))
     }
 }
 
