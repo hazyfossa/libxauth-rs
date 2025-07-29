@@ -1,6 +1,7 @@
 pub mod encoding;
 pub mod lock;
 
+use std::ffi::OsString;
 use std::io::{self, Seek};
 use std::{env, fs::File, path::PathBuf};
 
@@ -103,17 +104,15 @@ impl ServerAuthBuilder {
     }
 }
 
-pub struct LocalXAuthority {
+pub struct LocalAuthorityBuilder {
     cookie: Cookie,
     hostname: Hostname,
 }
 
-impl LocalXAuthority {
+impl LocalAuthorityBuilder {
     pub fn new(cookie: Cookie, hostname: Hostname) -> Self {
         Self { cookie, hostname }
     }
-
-    // TODO: is a static, one-entry local server auth getter useful?
 
     pub fn build_server(&self) -> ServerAuthBuilder {
         ServerAuthBuilder::build().allow(&self.cookie, Scope::Local(self.hostname.clone()))
@@ -159,13 +158,6 @@ impl XAuthorityFile {
         Self { file, _lock: None }
     }
 
-    pub fn path() -> Option<PathBuf> {
-        Some(match env::var_os("XAUTHORITY") {
-            Some(path) => path.into(),
-            None => env::home_dir().map(|home| home.join(".Xauthority"))?,
-        })
-    }
-
     pub fn get(&mut self) -> io::Result<XAuthority> {
         self.file.rewind()?;
         XAuthority::read_from(&mut self.file)
@@ -179,5 +171,25 @@ impl XAuthorityFile {
     pub fn append(&mut self, authority: XAuthority) -> io::Result<()> {
         self.file.seek(io::SeekFrom::End(0))?;
         authority.write_to(&mut self.file)
+    }
+}
+
+pub struct ClientAuthorityPath(PathBuf);
+
+impl ClientAuthorityPath {
+    const ENV_KEY: &str = "XAUTHORITY";
+    pub fn get_env() -> Option<Self> {
+        Some(Self(env::var_os(Self::ENV_KEY)?.into()))
+    }
+
+    pub fn to_env_entry(self) -> (String, OsString) {
+        (Self::ENV_KEY.to_string(), self.0.into())
+    }
+
+    pub fn get_default() -> Option<Self> {
+        Some(Self(
+            env::home_dir()? // TODO: proper error
+                .join(".Xauthority"),
+        ))
     }
 }
