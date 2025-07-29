@@ -2,11 +2,32 @@ pub mod encoding;
 pub mod lock;
 
 use std::ffi::OsString;
-use std::io::{self, Seek};
+use std::io::{self, Read, Seek, Write};
+use std::vec;
 use std::{env, fs::File, path::PathBuf};
 
-use crate::encoding::{Family, XAuthority, XAuthorityEntry};
+use crate::encoding::{Family, XAuthorityEntry};
 use crate::lock::XAuthorityLock;
+
+pub struct ClientAuthorityPath(PathBuf);
+
+impl ClientAuthorityPath {
+    const ENV_KEY: &str = "XAUTHORITY";
+    pub fn get_env() -> Option<Self> {
+        Some(Self(env::var_os(Self::ENV_KEY)?.into()))
+    }
+
+    pub fn to_env_entry(self) -> (String, OsString) {
+        (Self::ENV_KEY.to_string(), self.0.into())
+    }
+
+    pub fn get_default() -> Option<Self> {
+        Some(Self(
+            env::home_dir()? // TODO: proper error
+                .join(".Xauthority"),
+        ))
+    }
+}
 
 type DisplayNumber = String;
 
@@ -139,6 +160,44 @@ impl LocalAuthorityBuilder {
     }
 }
 
+pub struct XAuthority(Vec<XAuthorityEntry>);
+
+impl XAuthority {
+    pub fn new(entries: Option<Vec<XAuthorityEntry>>) -> Self {
+        Self(entries.unwrap_or_default())
+    }
+
+    pub fn add_entry(&mut self, entry: XAuthorityEntry) {
+        self.0.push(entry);
+    }
+
+    fn read_from<R: Read>(reader: &mut R) -> io::Result<Self> {
+        let mut buf = Vec::new();
+
+        while let Some(entry) = XAuthorityEntry::read_from(reader)? {
+            buf.push(entry);
+        }
+
+        Ok(Self(buf))
+    }
+
+    fn write_to<W: Write>(&self, writer: &mut W) -> io::Result<()> {
+        for entry in &self.0 {
+            entry.write_to(writer)?
+        }
+
+        Ok(())
+    }
+}
+
+impl IntoIterator for XAuthority {
+    type Item = XAuthorityEntry;
+    type IntoIter = vec::IntoIter<Self::Item>;
+    fn into_iter(self) -> Self::IntoIter {
+        self.0.into_iter()
+    }
+}
+
 pub struct XAuthorityFile {
     file: File,
     _lock: Option<XAuthorityLock>,
@@ -171,25 +230,5 @@ impl XAuthorityFile {
     pub fn append(&mut self, authority: XAuthority) -> io::Result<()> {
         self.file.seek(io::SeekFrom::End(0))?;
         authority.write_to(&mut self.file)
-    }
-}
-
-pub struct ClientAuthorityPath(PathBuf);
-
-impl ClientAuthorityPath {
-    const ENV_KEY: &str = "XAUTHORITY";
-    pub fn get_env() -> Option<Self> {
-        Some(Self(env::var_os(Self::ENV_KEY)?.into()))
-    }
-
-    pub fn to_env_entry(self) -> (String, OsString) {
-        (Self::ENV_KEY.to_string(), self.0.into())
-    }
-
-    pub fn get_default() -> Option<Self> {
-        Some(Self(
-            env::home_dir()? // TODO: proper error
-                .join(".Xauthority"),
-        ))
     }
 }
