@@ -2,7 +2,6 @@ use std::{
     io::{self, Read, Write},
     vec,
 };
-use strum::FromRepr;
 
 fn read_len<R: Read>(reader: &mut R) -> io::Result<u16> {
     let mut buffer = [0u8; 2];
@@ -48,18 +47,32 @@ fn write_field(writer: &mut impl Write, bytes: &[u8]) -> io::Result<()> {
     Ok(())
 }
 
-// Public API
-
-#[repr(u16)]
-#[derive(Debug, FromRepr, Clone)]
+#[derive(Debug)]
 pub enum Family {
-    Local = 256,
-    Wild = 65535,
+    Local,
+    Wild,
+    Other(u16),
+    // Netname, 254
+    // Krb5Principal, 253
+    // LocalHost, 252
+}
 
-    Netname = 254,
-    Krb5Principal = 253,
-    LocalHost = 252,
-    ProbablyWildNonspec = 0, // TODO:
+impl Family {
+    fn encode(&self) -> u16 {
+        match self {
+            Self::Local => 256,
+            Self::Wild => 65535, // TODO:
+            Self::Other(x) => *x,
+        }
+    }
+
+    fn decode(value: u16) -> Self {
+        match value {
+            256 => Self::Local,
+            65535 => Self::Wild,
+            x => Self::Other(x),
+        }
+    }
 }
 
 #[derive(Debug)]
@@ -73,7 +86,7 @@ pub struct XAuthorityEntry {
 
 impl XAuthorityEntry {
     pub fn read_from<R: Read>(reader: &mut R) -> io::Result<Option<Self>> {
-        let family = match read_len(reader) {
+        let family = Family::decode(match read_len(reader) {
             Ok(value) => value,
             Err(e) => {
                 return match e.kind() {
@@ -81,11 +94,10 @@ impl XAuthorityEntry {
                     _ => Err(e),
                 };
             }
-        };
-        let family = Family::from_repr(family).ok_or(err_invalid_field("family"));
+        });
 
         Ok(Some(Self {
-            family: family?,
+            family,
             address: read_field_into!(reader, "address")?,
             display_number: read_field_into!(reader, "display_number")?,
             auth_name: read_field_into!(reader, "auth_name")?,
@@ -94,7 +106,7 @@ impl XAuthorityEntry {
     }
 
     pub fn write_to<W: Write>(&self, writer: &mut W) -> io::Result<()> {
-        write_len(writer, self.family.clone() as u16)?;
+        write_len(writer, self.family.encode())?;
         write_field(writer, &self.address)?;
         write_field(writer, self.display_number.as_bytes())?;
         write_field(writer, self.auth_name.as_bytes())?;
