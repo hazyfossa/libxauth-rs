@@ -2,8 +2,10 @@ mod encoding;
 mod lock;
 pub mod utils;
 
-use std::fs::File;
+use std::fs::{File, OpenOptions};
 use std::io::{self, Read, Seek, Write};
+use std::os::unix::fs::OpenOptionsExt;
+use std::path::Path;
 use std::vec;
 
 use crate::encoding::{Family, XAuthorityEntry};
@@ -45,6 +47,7 @@ impl From<Scope> for (Family, Hostname) {
 
 // Technically, this should be a trait "AuthMethod"
 // Practically, cookie is the only method that is currently used
+// TODO: do we need speacial memory handling here for security? zeroize on drop?
 pub struct Cookie([u8; Self::BYTES_LEN]);
 impl Cookie {
     pub const BYTES_LEN: usize = 16; // 16 * 8 = 128 random bits
@@ -120,7 +123,7 @@ pub struct XAuthorityFile {
 }
 
 impl XAuthorityFile {
-    pub fn new(file: File, lock: XAuthorityLock) -> io::Result<Self> {
+    pub fn from_existing(file: File, lock: XAuthorityLock) -> io::Result<Self> {
         Ok(Self {
             file,
             _lock: Some(lock),
@@ -128,9 +131,38 @@ impl XAuthorityFile {
     }
 
     /// # Safety
-    /// This should only be used when a caller is sure no other parties will change this file.
-    pub unsafe fn new_skip_locking(file: File) -> Self {
+    /// the caller should ensure no other process will open the same file
+    /// Note that for files created by other programs, this is generraly impossible to guarantee
+    /// Thus, this api is not recommended, unless you are absolutely sure what you're doing
+    pub unsafe fn from_existing_unlocked(file: File) -> Self {
         Self { file, _lock: None }
+    }
+
+    fn create_inner(path: &Path) -> io::Result<File> {
+        OpenOptions::new()
+            .read(true)
+            .write(true)
+            .mode(0o600)
+            .create_new(true)
+            .open(path)
+    }
+
+    pub fn create(path: &Path) -> io::Result<Self> {
+        let file = Self::create_inner(path)?;
+        let lock = XAuthorityLock::aqquire(path)?;
+
+        Ok(Self {
+            file,
+            _lock: Some(lock),
+        })
+    }
+
+    /// # Safety
+    /// the caller should ensure no other process will open the same path
+    // TODO: add examples on how to guarantee that
+    pub unsafe fn create_unlocked(path: &Path) -> io::Result<Self> {
+        let file = Self::create_inner(path)?;
+        Ok(Self { file, _lock: None })
     }
 
     pub fn get(&mut self) -> io::Result<XAuthority> {
@@ -144,6 +176,7 @@ impl XAuthorityFile {
     }
 
     pub fn append(&mut self, authority: XAuthority) -> io::Result<()> {
+        // Holds without the append option on a file, as the file is opened locked
         self.file.seek(io::SeekFrom::End(0))?;
         authority.write_to(&mut self.file)
     }

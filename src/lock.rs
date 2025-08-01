@@ -1,5 +1,5 @@
 use std::{
-    fs::{OpenOptions, remove_file},
+    fs::{OpenOptions, hard_link, remove_file},
     io,
     os::unix::fs::OpenOptionsExt,
     path::{Path, PathBuf},
@@ -11,6 +11,7 @@ fn replace_filename(mut path: PathBuf, new_filename: String) -> PathBuf {
 }
 
 pub struct XAuthorityLock {
+    creat_path: PathBuf,
     link_path: PathBuf,
 }
 
@@ -23,6 +24,7 @@ impl XAuthorityLock {
         let filename = filename.to_str().unwrap(); // TODO: error
 
         let creat_path = replace_filename(xauth_path.to_path_buf(), format!("{filename}-c"));
+        // TODO: for full parity need to handle case where filesystem doesnt support hard links
         let link_path = replace_filename(xauth_path.to_path_buf(), format!("{filename}-l"));
 
         let lockfile = OpenOptions::new()
@@ -33,12 +35,18 @@ impl XAuthorityLock {
 
         drop(lockfile); // immediately close, as we don't need to interact with that file
 
-        Ok(Self { link_path })
+        hard_link(&creat_path, &link_path)?;
+
+        Ok(Self {
+            creat_path,
+            link_path,
+        })
     }
 }
 
 impl Drop for XAuthorityLock {
     fn drop(&mut self) {
+        let _ = remove_file(&self.creat_path);
         let _ = remove_file(&self.link_path);
     }
 }
