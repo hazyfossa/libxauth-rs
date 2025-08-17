@@ -7,8 +7,8 @@ use std::os::unix::fs::OpenOptionsExt;
 use std::path::Path;
 use std::vec;
 
-use crate::encoding::{Entry, Family};
-pub use crate::lock::Lock;
+use crate::encoding::Family;
+pub use crate::{encoding::Entry, lock::Lock};
 
 pub type Hostname = Vec<u8>;
 
