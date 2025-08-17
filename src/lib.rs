@@ -75,9 +75,9 @@ impl Entry {
     }
 }
 
-pub struct XAuthority(Vec<Entry>);
+pub struct Authority(Vec<Entry>);
 
-impl XAuthority {
+impl Authority {
     pub fn new(entries: Option<Vec<Entry>>) -> Self {
         Self(entries.unwrap_or_default())
     }
@@ -105,7 +105,7 @@ impl XAuthority {
     }
 }
 
-impl IntoIterator for XAuthority {
+impl IntoIterator for Authority {
     type Item = Entry;
     type IntoIter = vec::IntoIter<Self::Item>;
     fn into_iter(self) -> Self::IntoIter {
@@ -113,12 +113,12 @@ impl IntoIterator for XAuthority {
     }
 }
 
-pub struct XAuthorityFile {
+pub struct AuthorityFile {
     file: File,
     _lock: Option<Lock>,
 }
 
-impl XAuthorityFile {
+impl AuthorityFile {
     pub fn from_existing(file: File, lock: Lock) -> io::Result<Self> {
         Ok(Self {
             file,
@@ -161,17 +161,17 @@ impl XAuthorityFile {
         Ok(Self { file, _lock: None })
     }
 
-    pub fn get(&mut self) -> io::Result<XAuthority> {
+    pub fn get(&mut self) -> io::Result<Authority> {
         self.file.rewind()?;
-        XAuthority::read_from(&mut self.file)
+        Authority::read_from(&mut self.file)
     }
 
-    pub fn set(&mut self, authority: XAuthority) -> io::Result<()> {
+    pub fn set(&mut self, authority: Authority) -> io::Result<()> {
         self.file.rewind()?;
         authority.write_to(&mut self.file)
     }
 
-    pub fn append(&mut self, authority: XAuthority) -> io::Result<()> {
+    pub fn append(&mut self, authority: Authority) -> io::Result<()> {
         // Holds without the append option on a file, as the file is opened locked
         self.file.seek(io::SeekFrom::End(0))?;
         authority.write_to(&mut self.file)
