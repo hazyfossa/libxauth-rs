@@ -76,7 +76,7 @@ impl Family {
 }
 
 #[derive(Debug)]
-pub struct XAuthorityEntry {
+pub struct Entry {
     pub family: Family,
     pub address: Vec<u8>,
     pub display_number: String,
@@ -84,7 +84,7 @@ pub struct XAuthorityEntry {
     pub auth_data: Vec<u8>,
 }
 
-impl XAuthorityEntry {
+impl Entry {
     pub fn read_from<R: Read>(reader: &mut R) -> io::Result<Option<Self>> {
         let family = Family::decode(match read_len(reader) {
             Ok(value) => value,

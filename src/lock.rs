@@ -10,12 +10,14 @@ fn replace_filename(mut path: PathBuf, new_filename: String) -> PathBuf {
     path
 }
 
-pub struct XAuthorityLock {
+// TODO: stale lock removal
+
+pub struct Lock {
     creat_path: PathBuf,
     link_path: PathBuf,
 }
 
-impl XAuthorityLock {
+impl Lock {
     pub fn aqquire(xauth_path: &Path) -> io::Result<Self> {
         let filename = xauth_path.file_name().ok_or(io::Error::new(
             io::ErrorKind::InvalidFilename,
@@ -44,7 +46,7 @@ impl XAuthorityLock {
     }
 }
 
-impl Drop for XAuthorityLock {
+impl Drop for Lock {
     fn drop(&mut self) {
         let _ = remove_file(&self.creat_path);
         let _ = remove_file(&self.link_path);

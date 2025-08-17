@@ -1,6 +1,5 @@
 mod encoding;
 mod lock;
-pub mod utils;
 
 use std::fs::{File, OpenOptions};
 use std::io::{self, Read, Seek, Write};
@@ -8,28 +7,25 @@ use std::os::unix::fs::OpenOptionsExt;
 use std::path::Path;
 use std::vec;
 
-use crate::encoding::{Family, XAuthorityEntry};
-pub use crate::lock::XAuthorityLock;
+use crate::encoding::{Entry, Family};
+pub use crate::lock::Lock;
 
-type DisplayNumber = String;
+pub type Hostname = Vec<u8>;
 
 pub enum Target {
-    // Think of this as "auth slot"
     // u16 (65536 cookies) is an arbitrary but reasonable limit
-    Server(u16),
-    Client(DisplayNumber),
+    Server { slot: u16 },
+    Client { display_number: String },
 }
 
 impl From<Target> for String {
     fn from(value: Target) -> Self {
         match value {
-            Target::Server(slot) => slot.to_string(),
-            Target::Client(display) => display,
+            Target::Server { slot } => slot.to_string(),
+            Target::Client { display_number } => display_number,
         }
     }
 }
-
-type Hostname = Vec<u8>;
 
 pub enum Scope {
     Local(Hostname),
@@ -47,7 +43,7 @@ impl From<Scope> for (Family, Hostname) {
 
 // Technically, this should be a trait "AuthMethod"
 // Practically, cookie is the only method that is currently used
-// TODO: do we need speacial memory handling here for security? zeroize on drop?
+// TODO: do we need special memory handling here for security? zeroize on drop?
 pub struct Cookie([u8; Self::BYTES_LEN]);
 impl Cookie {
     pub const BYTES_LEN: usize = 16; // 16 * 8 = 128 random bits
@@ -63,13 +59,13 @@ impl Cookie {
     }
 }
 
-impl XAuthorityEntry {
-    pub fn new(cookie: &Cookie, scope: Scope, target: Target) -> XAuthorityEntry {
+impl Entry {
+    pub fn new(cookie: &Cookie, scope: Scope, target: Target) -> Entry {
         let (family, address) = scope.into();
         let display_number = target.into();
         let (auth_name, auth_data) = cookie.raw_data();
 
-        XAuthorityEntry {
+        Entry {
             family,
             address,
             display_number,
@@ -79,21 +75,21 @@ impl XAuthorityEntry {
     }
 }
 
-pub struct XAuthority(Vec<XAuthorityEntry>);
+pub struct XAuthority(Vec<Entry>);
 
 impl XAuthority {
-    pub fn new(entries: Option<Vec<XAuthorityEntry>>) -> Self {
+    pub fn new(entries: Option<Vec<Entry>>) -> Self {
         Self(entries.unwrap_or_default())
     }
 
-    pub fn add_entry(&mut self, entry: XAuthorityEntry) {
+    pub fn add_entry(&mut self, entry: Entry) {
         self.0.push(entry);
     }
 
     fn read_from<R: Read>(reader: &mut R) -> io::Result<Self> {
         let mut buf = Vec::new();
 
-        while let Some(entry) = XAuthorityEntry::read_from(reader)? {
+        while let Some(entry) = Entry::read_from(reader)? {
             buf.push(entry);
         }
 
@@ -110,7 +106,7 @@ impl XAuthority {
 }
 
 impl IntoIterator for XAuthority {
-    type Item = XAuthorityEntry;
+    type Item = Entry;
     type IntoIter = vec::IntoIter<Self::Item>;
     fn into_iter(self) -> Self::IntoIter {
         self.0.into_iter()
@@ -119,11 +115,11 @@ impl IntoIterator for XAuthority {
 
 pub struct XAuthorityFile {
     file: File,
-    _lock: Option<XAuthorityLock>,
+    _lock: Option<Lock>,
 }
 
 impl XAuthorityFile {
-    pub fn from_existing(file: File, lock: XAuthorityLock) -> io::Result<Self> {
+    pub fn from_existing(file: File, lock: Lock) -> io::Result<Self> {
         Ok(Self {
             file,
             _lock: Some(lock),
@@ -149,7 +145,7 @@ impl XAuthorityFile {
 
     pub fn create(path: &Path) -> io::Result<Self> {
         let file = Self::create_inner(path)?;
-        let lock = XAuthorityLock::aqquire(path)?;
+        let lock = Lock::aqquire(path)?;
 
         Ok(Self {
             file,
