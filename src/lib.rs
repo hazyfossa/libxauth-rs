@@ -1,11 +1,13 @@
 mod encoding;
 mod lock;
 
-use std::fs::{File, OpenOptions};
-use std::io::{self, Read, Seek, Write};
-use std::os::unix::fs::OpenOptionsExt;
-use std::path::Path;
-use std::vec;
+use std::{
+    fs::{File, OpenOptions},
+    io::{self, Read, Seek, Write},
+    os::unix::fs::OpenOptionsExt,
+    path::Path,
+    vec,
+};
 
 use crate::encoding::Family;
 pub use crate::{encoding::Entry, lock::Lock};
