@@ -1,3 +1,5 @@
+# [-] merged with `flint`
+
 # libxauth-rs
 
 A rust re-implementation of libXau, the library for managing X server authority. 
